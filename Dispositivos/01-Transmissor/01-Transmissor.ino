@@ -25,6 +25,8 @@
 
 uint32_t fatorE = 7;     /* Valor do fator de espalhamento */
 int id_dispositivo = 1;  /* O id do dispositivo deve ser único para cada dispositivo */
+#define TAMANHO_FILA 10 /* Define o tamanho máximo da fila */
+int qtdFila = 0; /* Número de elementos na fila */
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST); /* Definicões do Display OLED */
 
@@ -33,9 +35,14 @@ typedef struct __attribute__((__packed__))
 {
   int contador;
   int id_dispositivo; /* O dispositivo que enviou o pacote */
+  int qtd_fila;
   byte tipo_mensagem; /* Tipos de Mensagem: 1 - Envio da mensagem, 2 - Confirmação de recebimento */
+  byte comando;       /* Tipos de comandos: 1 - Enfileirar, 2 - Desenfila */
   char mensagem[20];
 } TDadosLora;
+
+TDadosLora dados_enviados = {0, id_dispositivo, qtdFila, 1, 0, ""}; /* Último pacote que foi transmitido */
+TDadosLora dados_receber = {0, id_dispositivo, qtdFila, 2, 0, ""}; /* Último pacote que foi recebido */
 
 void aguardando_dados_display() {
   /* Imprimir mensagem dizendo o tipo do dispositivo */
@@ -106,7 +113,7 @@ TDadosLora enviar_dados_lora(TDadosLora dados_lora) /* Transmite os dados via Lo
 bool init_comunicacao_lora(void)
 {
     bool status_init = false;
-    Serial.println("[LoRa Emissor] Tentando iniciar comunicacao com o radio LoRa...");
+    /* Serial.println("[LoRa Emissor] Tentando iniciar comunicacao com o radio LoRa..."); */
     SPI.begin(SCK_LORA, MISO_LORA, MOSI_LORA, SS_PIN_LORA);
     LoRa.setPins(SS_PIN_LORA, RESET_PIN_LORA, LORA_DEFAULT_DIO0_PIN);
 
@@ -114,7 +121,7 @@ bool init_comunicacao_lora(void)
     
     if (!LoRa.begin(BAND)) 
     {
-      Serial.println("[LoRa Emissor] Comunicacao com o radio LoRa falhou. Nova tentativa em 1 segundo...");        
+      /* Serial.println("[LoRa Emissor] Comunicacao com o radio LoRa falhou. Nova tentativa em 1 segundo..."); */
       status_init = false;
 
       display.setCursor(0, 0);
@@ -135,7 +142,7 @@ bool init_comunicacao_lora(void)
       LoRa.setCodingRate4(5);          /* Taxa de código - Suporta valores entre 5 e 8 */
       LoRa.setSyncWord(0x55);          /* Palavra de sincronização. Deve ser a mesma no transmissor e receptor */
       
-      Serial.println("[LoRa Emissor] Comunicacao com o radio LoRa ok");
+      /*Serial.println("[LoRa Emissor] Comunicacao com o radio LoRa ok"); */
       status_init = true;
 
       display.setCursor(0, 0);
@@ -147,8 +154,6 @@ bool init_comunicacao_lora(void)
 
     return status_init;
 }
-
-TDadosLora dados_receber = {0, id_dispositivo, 2, ""}; /* Inicializando o pacote */
 
 void recebe_informacoes(){ /* Recebe os pacotes de confirmação de recepção */
   TDadosLora dados_temp;   /* Inicializando o pacote */
@@ -175,71 +180,57 @@ void recebe_informacoes(){ /* Recebe os pacotes de confirmação de recepção *
   }
 }
 
-#define TAMANHO_FILA 10 // Define o tamanho máximo da fila
-
-// Fila de elementos do tipo TDadosLora
-TDadosLora fila[TAMANHO_FILA];
-int frente = 0; // Índice para o início da fila
-int traseira = -1; // Índice para o fim da fila
-int tamanhoAtual = 0; // Número de elementos na fila
-
-// Função para verificar se a fila está cheia
+/* Função para verificar se a fila está cheia */
 bool isFilaCheia() {
-  return (tamanhoAtual == TAMANHO_FILA);
+  return (qtdFila == TAMANHO_FILA);
 }
 
-// Função para verificar se a fila está vazia
+/* Função para verificar se a fila está vazia */
 bool isFilaVazia() {
-  return (tamanhoAtual == 0);
+  return (qtdFila == 0);
 }
 
-// Função para remover um elemento da fila
+/* Função para remover um elemento da fila */
 void desenfileirar() {
   if (isFilaVazia()) {
-    Serial.println("Erro: Fila vazia");
     return;
   }
-  frente = (frente + 1) % TAMANHO_FILA; // Incrementa circularmente o índice frontal
-  tamanhoAtual--;
+  qtdFila--;
+  TDadosLora novoDado = {0, id_dispositivo, qtdFila, 0, 2, ""};
+  Serial.write((byte*)&novoDado, sizeof(TDadosLora)); /* Envia o comando para desenfileirar na TV-BOX */
 }
 
-// Função para adicionar um elemento à fila
+/* Função para adicionar um elemento à fila */
 void enfileirar(TDadosLora novoDado) {
   if (isFilaCheia()) {
     desenfileirar();
-  }
-  traseira = (traseira + 1) % TAMANHO_FILA; // Incrementa circularmente o índice traseiro
-  fila[traseira] = novoDado; // Adiciona o novo elemento à fila
-  tamanhoAtual++;
-}
-
-// Função para imprimir a fila
-void imprimirFila() {
-  if (isFilaVazia()) {
-    Serial.println("Fila está vazia");
-    return;
+    delay(10);
   }
   
-  Serial.println("Conteúdo da fila:");
-  int indiceAtual = frente; // Começa pelo início da fila
+  novoDado.comando = 1; /* Comando para enfileirar na TV-BOX */
+  Serial.write((byte*)&novoDado, sizeof(TDadosLora)); /* Envia o pacote para ser armazenado na TV-BOX */
   
-  for (int i = 0; i < tamanhoAtual; i++) {
-    TDadosLora dado = fila[indiceAtual];
-    
-    // Imprimindo os campos da estrutura
-    Serial.print("Contador: ");
-    Serial.print(dado.contador);
-    Serial.print(", ID Dispositivo: ");
-    Serial.print(dado.id_dispositivo);
-    Serial.print(", Tipo Mensagem: ");
-    Serial.print(dado.tipo_mensagem);
-    Serial.print(", Mensagem: ");
-    Serial.println(dado.mensagem);
-    
-    // Incrementa circularmente o índice para o próximo elemento
-    indiceAtual = (indiceAtual + 1) % TAMANHO_FILA;
+  /* Aguarda por meio segundo para a resposta 
+  unsigned long startTime = millis();
+  bool respostaRecebida = false;
+  
+  while (millis() - startTime < 500) {
+    if (Serial.available()) {
+      String resposta = Serial.readStringUntil('\n');
+      if (resposta == "Sucesso") {
+        respostaRecebida = true;
+        break;
+      }
+    }
   }
-  Serial.println("");
+  
+  if (!respostaRecebida) {
+    qtdFila++;
+  } else {
+    //qtdFila = 0;
+    //dados_enviados.contador = 0;
+    //dados_receber.contador = 0;
+  } */
 }
 
 int cont = 1;
@@ -248,9 +239,10 @@ TDadosLora capturar_dados(){ /* Captura as informações dos sensores para trans
   TDadosLora dados_transmitir;
   dados_transmitir.contador = cont;
   dados_transmitir.id_dispositivo = id_dispositivo;
+  dados_transmitir.qtd_fila = qtdFila;
   dados_transmitir.tipo_mensagem = 1;
-  memset(dados_transmitir.mensagem, 0, sizeof(dados_transmitir.mensagem));
-  sprintf(dados_transmitir.mensagem, "Ola mundo");
+  dados_transmitir.comando = 0;
+  strcpy(dados_transmitir.mensagem, "Ola mundo");
   cont++;
 
   return dados_transmitir;
@@ -270,12 +262,9 @@ void setup()
   /* Inicialização do display OLED */
   Wire.begin(OLED_SDA, OLED_SCL);
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3c, false, false)) { // Address 0x3C for 128x32
-    Serial.println(F("Falha no Display Oled"));
-    for(;;); // Don't proceed, loop forever
+    for(;;); /* Don't proceed, loop forever */
   }
 
-  /* Mensagem inicial */
-  Serial.println("TRANSMISSOR LORA");
   display.clearDisplay();
   display.setTextColor(WHITE);
   display.setTextSize(1);
@@ -292,48 +281,43 @@ void setup()
   aguardando_dados_display();
 }
 
-unsigned long tempoAnterior1 = 0;
-unsigned long tempoAnterior2 = 0;
-const long intervalo1 = 4000;
-const long intervalo2 = 2000;
-TDadosLora dados_enviados = {0, id_dispositivo, 1, ""}; /* Útimo pacote que foi transmitido */
+unsigned long tempoAnterior = 0;
+const long intervalo = 4000;
 bool isInit = true; /* Verifica se está na primeira iteração */
 
 void loop()
 {
-  if (millis() - tempoAnterior1 >= intervalo1) { /* Captura os dados a cada intervalo de tempo e decide se vai enviar ou armazenar */
+  if (millis() - tempoAnterior >= intervalo) { /* Captura os dados a cada intervalo de tempo e decide se vai enviar ou armazenar */
     TDadosLora dados_enviar = capturar_dados(); /* Dados capturados para envio ou armazenamento */
-    tempoAnterior1 = millis();
+    tempoAnterior = millis();
     
-    if(tamanhoAtual == 0) { /* O armazenamento está vazio */  
+    if(qtdFila == 0) { /* O armazenamento está vazio */  
       if(isInit || dados_enviados.contador == dados_receber.contador) { /* Significa que o pacote foi recebido com sucesso */
         dados_enviados = enviar_dados_lora(dados_enviar);
         isInit = false;
         escreve_medicoes_display(dados_enviados, 1);
       } else {
         enfileirar(dados_enviados);
+        delay(intervalo / 2);
         enfileirar(dados_enviar);
-        imprimirFila();
       }
-    } else if(tamanhoAtual > 0) { /* O armazenamento possui dados */
+    } else if(qtdFila > 0) { /* O armazenamento possui dados */
       enfileirar(dados_enviar);
-      imprimirFila();
     }
   }
 
-  if (millis() - tempoAnterior2 >= intervalo2) { /* Captura os dados da fila para envio e, se obtiver sucesso, remove o elemento da fila */
-    tempoAnterior2 = millis();
+  /* Verifica se há dados disponíveis na serial */
+  if (Serial.available() >= sizeof(TDadosLora)) { 
+    TDadosLora dados_enviar;
+    Serial.readBytes((char *)&dados_enviar, sizeof(TDadosLora)); /* Lê os dados e os armazena na estrutura */
+    qtdFila = dados_enviar.qtd_fila;
     
-    if(tamanhoAtual > 0){
-      TDadosLora dados_enviar = fila[frente]; /* Próximo da fila */
-      
-      if (dados_enviados.contador == dados_receber.contador){
-        desenfileirar();
-        imprimirFila();
-      }
-      dados_enviados = enviar_dados_lora(dados_enviar);
-      escreve_medicoes_display(dados_enviar, 2);
+    if (dados_enviados.contador == dados_receber.contador){
+      desenfileirar();
     }
+    
+    dados_enviados = enviar_dados_lora(dados_enviar);
+    escreve_medicoes_display(dados_enviar, 2);
   }
   
   recebe_informacoes();

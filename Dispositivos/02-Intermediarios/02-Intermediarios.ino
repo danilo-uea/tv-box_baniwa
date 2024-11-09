@@ -34,7 +34,9 @@ typedef struct __attribute__((__packed__))
 {
   int contador;
   int id_dispositivo; /* O dispositivo que enviou o pacote */
+  int qtd_fila;        /* Quantidade de elementos que estão na fila */
   byte tipo_mensagem; /* Tipos de Mensagem: 1 - Envio da mensagem, 2 - Confirmação de recebimento */
+  byte comando;       /* Tipos de comandos: 1 - Enfileirar, 2 - Desenfila */
   char mensagem[20];
 } TDadosLora;
 
