@@ -92,7 +92,6 @@ while True:
             # Enfileirar o pacote
             if comando == 1:
                 enfileirar(pacote)
-                # porta_serial.write(b"Sucesso\n")
             elif comando == 2:
                 desenfileirar()
             
@@ -107,7 +106,7 @@ while True:
 
     # Executando o bloco de código a cada intervalo de tempo definido...
     if time.time() - ultimo_tempo >= intervalo:
-        # Obtém o primeir elemento da fila
+        # Obtém o primeiro elemento da fila
         primeiro_elemento = fila[0] if fila else None  # Verifica se a fila não está vazia
         if primeiro_elemento != None:
             primeiro_elemento['qtd_fila'] = len(fila)

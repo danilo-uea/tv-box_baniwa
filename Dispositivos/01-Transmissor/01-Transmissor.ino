@@ -42,7 +42,7 @@ typedef struct __attribute__((__packed__))
 } TDadosLora;
 
 TDadosLora dados_enviados = {0, id_dispositivo, qtdFila, 1, 0, ""}; /* Último pacote que foi transmitido */
-TDadosLora dados_receber = {0, id_dispositivo, qtdFila, 2, 0, ""}; /* Último pacote que foi recebido */
+TDadosLora dados_recebidos = {0, id_dispositivo, qtdFila, 2, 0, ""}; /* Último pacote que foi recebido */
 
 void aguardando_dados_display() {
   /* Imprimir mensagem dizendo o tipo do dispositivo */
@@ -173,9 +173,9 @@ void recebe_informacoes(){ /* Recebe os pacotes de confirmação de recepção *
 
     /* Ele só aceita os pacotes que ele enviou do tipo de confirmação de recepção */
     if(dados_temp.id_dispositivo == id_dispositivo && dados_temp.tipo_mensagem == 2){
-      dados_receber = dados_temp;
-      //envia_medicoes_serial(dados_receber);
-      //escreve_medicoes_display(dados_receber);
+      dados_recebidos = dados_temp;
+      //envia_medicoes_serial(dados_recebidos);
+      //escreve_medicoes_display(dados_recebidos);
     }
   }
 }
@@ -209,28 +209,7 @@ void enfileirar(TDadosLora novoDado) {
   
   novoDado.comando = 1; /* Comando para enfileirar na TV-BOX */
   Serial.write((byte*)&novoDado, sizeof(TDadosLora)); /* Envia o pacote para ser armazenado na TV-BOX */
-  
-  /* Aguarda por meio segundo para a resposta 
-  unsigned long startTime = millis();
-  bool respostaRecebida = false;
-  
-  while (millis() - startTime < 500) {
-    if (Serial.available()) {
-      String resposta = Serial.readStringUntil('\n');
-      if (resposta == "Sucesso") {
-        respostaRecebida = true;
-        break;
-      }
-    }
-  }
-  
-  if (!respostaRecebida) {
-    qtdFila++;
-  } else {
-    //qtdFila = 0;
-    //dados_enviados.contador = 0;
-    //dados_receber.contador = 0;
-  } */
+  qtdFila++;
 }
 
 int cont = 1;
@@ -291,17 +270,17 @@ void loop()
     TDadosLora dados_enviar = capturar_dados(); /* Dados capturados para envio ou armazenamento */
     tempoAnterior = millis();
     
-    if(qtdFila == 0) { /* O armazenamento está vazio */  
-      if(isInit || dados_enviados.contador == dados_receber.contador) { /* Significa que o pacote foi recebido com sucesso */
-        dados_enviados = enviar_dados_lora(dados_enviar);
+    if(qtdFila == 0) { /* O armazenamento na TV-BOX está vazio */  
+      if(isInit || dados_enviados.contador == dados_recebidos.contador) { /* Significa que o pacote foi recebido com sucesso */
+        dados_enviados = enviar_dados_lora(dados_enviar); /* Transmite os pacotes diretamente */
         isInit = false;
         escreve_medicoes_display(dados_enviados, 1);
-      } else {
+      } else { /* O pacote não foi recebido com sucesso, então é necessário armazená-lo na TV-BOX */
         enfileirar(dados_enviados);
         delay(intervalo / 2);
         enfileirar(dados_enviar);
       }
-    } else if(qtdFila > 0) { /* O armazenamento possui dados */
+    } else if(qtdFila > 0) { /* O armazenamento na TV-BOX possui dados para enviar */
       enfileirar(dados_enviar);
     }
   }
@@ -312,7 +291,7 @@ void loop()
     Serial.readBytes((char *)&dados_enviar, sizeof(TDadosLora)); /* Lê os dados e os armazena na estrutura */
     qtdFila = dados_enviar.qtd_fila;
     
-    if (dados_enviados.contador == dados_receber.contador){
+    if (dados_enviados.contador == dados_recebidos.contador){
       desenfileirar();
     }
     
