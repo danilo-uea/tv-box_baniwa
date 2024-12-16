@@ -4,6 +4,7 @@ import struct
 import time
 from collections import deque
 import serial.tools.list_ports
+import sqlite3
 
 porta_serial = None
 terminal_so = '' # O tipo de terminal para fazer comandos
@@ -11,7 +12,23 @@ porta = '' # Nome da porta
 TAMANHO_MAXIMO_FILA = 10 # Tamanho máximo da fila
 formato_estrutura = 'iiiBB20s'  # 'i' para int, 'B' para byte, '20s' para char[20]
 tamanho_estrutura = struct.calcsize(formato_estrutura) # Define o formato da estrutura conforme o pacote de dados em C
-fila = deque(maxlen=TAMANHO_MAXIMO_FILA) # Criar a fila
+
+# Conexão com o banco de dados
+connection = sqlite3.connect('banco_de_dados.db')
+cursor = connection.cursor()
+
+# Criar tabela
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS pacote (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contador INTEGER NOT NULL,
+    id_dispositivo INTEGER NOT NULL,
+    qtd_fila INTEGER NOT NULL,
+    tipo_mensagem INTEGER NOT NULL,
+    comando INTEGER NOT NULL,
+    mensagem TEXT NOT NULL
+)
+""")
 
 # Verifica qual é o nome da porta no sistema operacional: 'COM3' (no Windows) ou '/dev/ttyUSB0' (no Linux)
 ports = serial.tools.list_ports.comports()
@@ -42,30 +59,53 @@ def conectar_porta():
 # Conecte à porta inicialmente
 conectar_porta()
 
+# Verifica a quantidade de pacotes cadastrados
+def quantidade_fila():
+    cursor.execute("SELECT COUNT(*) FROM pacote")
+    resultado = cursor.fetchone()
+
+    return resultado[0]
+
 # Função para desenfileirar dados
 def desenfileirar():
-    if fila:
-        dados = fila.popleft()
-        print("Dados desenfileirados:", dados)
-        return dados
-    else:
-        print("A fila está vazia.")
-        return None
+    if quantidade_fila() > 0:
+        # Remover apenas o primeiro registro inserido (com o menor id)
+        cursor.execute("""
+            DELETE FROM pacote
+            WHERE id = (SELECT id FROM pacote ORDER BY id ASC LIMIT 1)
+        """)
+        connection.commit()
 
 # Função para enfileirar dados
 def enfileirar(dados):
-    if len(fila) < TAMANHO_MAXIMO_FILA:
-        fila.append(dados)
+    qtd = quantidade_fila()
+    if qtd < TAMANHO_MAXIMO_FILA:
+        # Se a tabela estiver vazia, redefinir o autoincremento para começar em 1 novamente
+        if qtd == 0:
+            cursor.execute("DELETE FROM sqlite_sequence WHERE name = 'pacote'")
+            connection.commit()
+        
+        # Inserir dados
+        cursor.execute("INSERT INTO pacote (contador, id_dispositivo, qtd_fila, tipo_mensagem, comando, mensagem) VALUES (?, ?, ?, ?, ?, ?)", dados)
+        connection.commit()
     else:
         desenfileirar()
         enfileirar(dados)
 
-# Função para verificar se a fila está cheia
-def fila_cheia():
-    return len(fila) == TAMANHO_MAXIMO_FILA
-
 intervalo = 2  # Tempo em segundos
 ultimo_tempo = time.time()
+
+# Imprime todos os pacotes inseridos
+def imprimir_tabela():
+    cursor.execute("SELECT * FROM pacote")
+    pacotes = cursor.fetchall()
+
+    if len(pacotes) > 0:
+        print(f"Quantidade: {quantidade_fila()}")
+        for pacote in pacotes:
+            print(pacote)
+
+        print("")
 
 while True:
     try:
@@ -79,15 +119,8 @@ while True:
             # Decodifica a string e remove bytes vazios
             mensagem = mensagem.decode('utf-8').rstrip('\x00')
 
-            # Criar um dicionário para armazenar a estrutura de forma compreensível
-            pacote = {
-                'contador': contador,
-                'id_dispositivo': id_dispositivo,
-                'qtd_fila': qtd_fila,
-                'tipo_mensagem': tipo_mensagem,
-                'comando': comando,
-                'mensagem': mensagem
-            }
+            # Uma tupla para armazenar a estrutura
+            pacote = (contador, id_dispositivo, qtd_fila, tipo_mensagem, comando, mensagem)
 
             # Enfileirar o pacote
             if comando == 1:
@@ -96,28 +129,31 @@ while True:
                 desenfileirar()
             
             limpar_terminal()
-             # Mostrar o status da fila
-            for objeto in fila:
-                print(f"Fila atual: {objeto}")
-            print("")
+            imprimir_tabela()
     except serial.SerialException:
         print("Porta serial desconectada. Tentando reconectar...")
         conectar_porta()
 
     # Executando o bloco de código a cada intervalo de tempo definido...
     if time.time() - ultimo_tempo >= intervalo:
-        # Obtém o primeiro elemento da fila
-        primeiro_elemento = fila[0] if fila else None  # Verifica se a fila não está vazia
-        if primeiro_elemento != None:
-            primeiro_elemento['qtd_fila'] = len(fila)
+        qtd = quantidade_fila()
+        if qtd > 0:
+            # Obtém o primeiro elemento da fila
+            cursor.execute("""
+                SELECT * FROM pacote
+                ORDER BY id ASC
+                LIMIT 1
+            """)
+            primeiro_elemento = cursor.fetchone()
+            
             # Empacotando os dados em formato binário
             dados_enviar = struct.pack(formato_estrutura,
-                                    primeiro_elemento['contador'],
-                                    primeiro_elemento['id_dispositivo'],
-                                    primeiro_elemento['qtd_fila'],
-                                    primeiro_elemento['tipo_mensagem'],
-                                    primeiro_elemento['comando'],
-                                    primeiro_elemento['mensagem'].encode('utf-8').ljust(20, b'\x00'))  # Preenche com '\x00' até 20 bytes
+                                    primeiro_elemento[1],
+                                    primeiro_elemento[2],
+                                    qtd, # Atualiza a quantidade de pacotes cadastrados
+                                    primeiro_elemento[4],
+                                    primeiro_elemento[5],
+                                    primeiro_elemento[6].encode('utf-8').ljust(20, b'\x00'))  # Preenche com '\x00' até 20 bytes
             # Envia os dados via Serial
             porta_serial.write(dados_enviar)
         # Atualiza o tempo da última execução
