@@ -7,6 +7,9 @@
 #include <LoRa.h>
 #include <SPI.h>
 
+/* Biblioteca para acessar o NVS */
+#include <Preferences.h>
+
 /* Pinagem para o Display Oled */
 #define OLED_SDA 4
 #define OLED_SCL 15 
@@ -22,6 +25,9 @@
 #define SS_PIN_LORA        18
 #define HIGH_GAIN_LORA     20  /* dBm */
 #define BAND               915E6  /* 915MHz de frequencia */
+
+/* Instância para acessar o NVS */
+Preferences preferences;
 
 uint32_t fatorE = 7;     /* Valor do fator de espalhamento */
 int id_dispositivo = 1;  /* O id do dispositivo deve ser único para cada dispositivo */
@@ -84,22 +90,6 @@ void escreve_medicoes_display(TDadosLora dados_lora, int state)
     }
     
     display.display();
-}
-
-void envia_medicoes_serial(TDadosLora dados_lora) 
-{
-  Serial.println("TRANSMISSOR");
-  
-  Serial.print("Contador: ");
-  Serial.println(dados_lora.contador);
-
-  Serial.print("Tipo Mensagem: ");
-  Serial.println(dados_lora.tipo_mensagem);
-
-  Serial.print("Mensagem: ");
-  Serial.println(dados_lora.mensagem);
-  
-  Serial.println(" ");
 }
 
 TDadosLora enviar_dados_lora(TDadosLora dados_lora) /* Transmite os dados via LoRa */   
@@ -174,8 +164,6 @@ void recebe_informacoes(){ /* Recebe os pacotes de confirmação de recepção *
     /* Ele só aceita os pacotes que ele enviou do tipo de confirmação de recepção */
     if(dados_temp.id_dispositivo == id_dispositivo && dados_temp.tipo_mensagem == 2){
       dados_recebidos = dados_temp;
-      //envia_medicoes_serial(dados_recebidos);
-      //escreve_medicoes_display(dados_recebidos);
     }
   }
 }
@@ -214,6 +202,20 @@ void enfileirar(TDadosLora novoDado) {
 
 int cont = 1;
 
+/* Função para salvar o contador antes do desligamento */
+void salvarContador() {
+  preferences.begin("dados", false); // Acessa o NVS
+  preferences.putInt("contador", cont); // Salva o contador
+  preferences.end();
+}
+
+/* Função para recupera o valor do contador ao iniciar */
+void pegarContador() {
+  preferences.begin("dados", false);
+  cont = preferences.getInt("contador", 1); // Valor padrão é 1
+  preferences.end();
+}
+
 TDadosLora capturar_dados(){ /* Captura as informações dos sensores para transmissão a cada período de tempo definido */
   TDadosLora dados_transmitir;
   dados_transmitir.contador = cont;
@@ -223,6 +225,7 @@ TDadosLora capturar_dados(){ /* Captura as informações dos sensores para trans
   dados_transmitir.comando = 0;
   strcpy(dados_transmitir.mensagem, "Ola mundo");
   cont++;
+  salvarContador();
 
   return dados_transmitir;
 }
@@ -258,6 +261,12 @@ void setup()
 
   /* Imprimir mensagem dizendo que está aguardando o funcionamento */
   aguardando_dados_display();
+
+  /* Recupera o valor do contador ao iniciar */
+  pegarContador();
+  
+  /* Registra o hook para salvar antes do reinício/desligamento */
+  esp_register_shutdown_handler(salvarContador);
 }
 
 unsigned long tempoAnterior = 0;
