@@ -97,6 +97,7 @@ TDadosLora enviar_dados_lora(TDadosLora dados_lora) /* Transmite os dados via Lo
   LoRa.beginPacket();
   LoRa.write((unsigned char *)&dados_lora, sizeof(TDadosLora));
   LoRa.endPacket();
+  salvarContador(dados_lora.contador);
   return dados_lora;
 }
 
@@ -203,9 +204,9 @@ void enfileirar(TDadosLora novoDado) {
 int cont = 1;
 
 /* Função para salvar o contador antes do desligamento */
-void salvarContador() {
+void salvarContador(int contador) {
   preferences.begin("dados", false); // Acessa o NVS
-  preferences.putInt("contador", cont); // Salva o contador
+  preferences.putInt("contador", contador); // Salva o contador
   preferences.end();
 }
 
@@ -225,7 +226,6 @@ TDadosLora capturar_dados(){ /* Captura as informações dos sensores para trans
   dados_transmitir.comando = 0;
   strcpy(dados_transmitir.mensagem, "Ola mundo");
   cont++;
-  salvarContador();
 
   return dados_transmitir;
 }
@@ -264,9 +264,6 @@ void setup()
 
   /* Recupera o valor do contador ao iniciar */
   pegarContador();
-  
-  /* Registra o hook para salvar antes do reinício/desligamento */
-  esp_register_shutdown_handler(salvarContador);
 }
 
 unsigned long tempoAnterior = 0;
