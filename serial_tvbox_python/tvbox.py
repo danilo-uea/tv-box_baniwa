@@ -12,6 +12,7 @@ porta = '' # Nome da porta
 TAMANHO_MAXIMO_FILA = 10 # Tamanho máximo da fila
 formato_estrutura = 'iiiBB20s'  # 'i' para int, 'B' para byte, '20s' para char[20]
 tamanho_estrutura = struct.calcsize(formato_estrutura) # Define o formato da estrutura conforme o pacote de dados em C
+cont_conectar = 0 # Conta quantas vezes o programa tentou conectar com o serial
 
 # Conexão com o banco de dados
 connection = sqlite3.connect('banco_de_dados.db')
@@ -47,13 +48,16 @@ def limpar_terminal():
 # Função para reconectar à porta serial
 def conectar_porta():
     global porta_serial
+    global cont_conectar
     while True:
         try:
             porta_serial = serial.Serial(porta, 115200, timeout=1)
             print("Porta serial conectada.")
+            cont_conectar = 0
             return
         except serial.SerialException:
-            print("Tentando reconectar...")
+            cont_conectar += 1
+            print(f"Tentando reconectar... {cont_conectar}")
             time.sleep(2)
 
 # Conecte à porta inicialmente

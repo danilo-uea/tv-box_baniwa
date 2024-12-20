@@ -41,6 +41,11 @@ if resultado[0] == 0:
 # """)
 # connection.commit()
 
+# Verifica a quantidade de pacotes cadastrados
+cursor.execute("SELECT COUNT(*) FROM pacote")
+resultado = cursor.fetchone()
+print(f"Quantidade: {resultado[0]}")
+
 # Consultar dados
 cursor.execute("SELECT * FROM pacote")
 pacotes = cursor.fetchall()
@@ -50,16 +55,16 @@ if len(pacotes) > 0:
         print(pacote)
 
 # Consultar apenas o primeiro registro inserido
-cursor.execute("""
-SELECT * FROM pacote
-ORDER BY id ASC
-LIMIT 1
-""")
+# cursor.execute("""
+# SELECT * FROM pacote
+# ORDER BY id ASC
+# LIMIT 1
+# """)
 
 primeiro = cursor.fetchone()  # Recuperar o único registro retornado
-if primeiro != None:
-    print("\nPrimeiro pacote inserido:")
-    print(primeiro)
+# if primeiro != None:
+#     print("\nPrimeiro pacote inserido:")
+#     print(primeiro)
 
 # Encerrar conexão
 connection.close()

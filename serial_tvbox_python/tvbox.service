@@ -1,0 +1,16 @@
+[Unit]
+Description=Script TV-Box Python
+After=network.target
+
+[Service]
+StandardOutput=append:/var/log/tvbox.log
+StandardError=append:/var/log/tvbox.log
+Environment="TERM=xterm"
+Environment="PYTHONPATH=/home/uea/.local/lib/python3.8/site-packages:/usr/local/lib/python3.8/dist-packages:/usr/lib/python3/dist-packages:/usr/lib/python3.8/dist-packages"
+WorkingDirectory=/home/uea/Documentos
+ExecStart=/usr/bin/python3 /home/uea/Documentos/tvbox.py
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
