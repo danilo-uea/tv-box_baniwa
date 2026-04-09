@@ -1,0 +1,19 @@
+TVBOX (Armbian)
+Usuário: Uea
+Senha: uea123
+
+Hat RPI Lora AFSmartMultiRadio 1276 Página 3
+Atenção: na imagem acima o 5V é uma saída, jamais alimentar o módulo por esse pino, a proposta
+desta saída é alimentar o Raspberry Pi, em Vin você pode entrar com uma tensão de 9 ~15Vdc
+Especificações
+Tensão de operação: 9~15Vdc
+Led indicador: Alimentação
+Dimensões: 65mm x 56mm x 20mm
+Rádio : Lora 1276 – Montagens Possíveis um, dois ou três rádios, estas configurações saem montadas
+de fábrica, comercializado somente 3 rádios.
+Senhas do sistema se fornecido/adquirido:
+Usuário: pi
+Pass: afeletronica
+Usuário: configurar
+Pass: afeletronica
+*** Após realizar suas configurações mude as senhas para segurança de sua rede/sistema
