@@ -1,0 +1,11 @@
+[Transferir arquivos pelo terminal no Windows PowerShell]
+scp D:\Documentos\GitHub\tv-box_baniwa\serial_tvbox_python\tvbox.py uea@rk322x-box.local:/home/uea/danilo
+
+[Executando comandos via SSH no Windows PowerShell]
+ssh uea@rk322x-box.local "ls /home/uea/danilo"
+
+[Executando scripts em python via SSH no Windows PowerShell]
+ssh uea@rk322x-box.local "python3 -u /home/uea/danilo/tvbox.py"
+
+[Desligando a máquina]
+ssh -t uea@rk322x-box.local "sudo shutdown -h now"

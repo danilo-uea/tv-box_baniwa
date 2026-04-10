@@ -1,8 +1,8 @@
-TVBOX (Armbian)
+[TVBOX (Armbian)]
 Usuário: Uea
 Senha: uea123
 
-Hat RPI Lora AFSmartMultiRadio 1276 Página 3
+[Hat RPI Lora AFSmartMultiRadio 1276]
 Atenção: na imagem acima o 5V é uma saída, jamais alimentar o módulo por esse pino, a proposta
 desta saída é alimentar o Raspberry Pi, em Vin você pode entrar com uma tensão de 9 ~15Vdc
 Especificações
