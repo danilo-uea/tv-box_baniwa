@@ -1,11 +1,39 @@
-[Transferir arquivos pelo terminal no Windows PowerShell]
-scp D:\Documentos\GitHub\tv-box_baniwa\serial_tvbox_python\tvbox.py uea@rk322x-box.local:/home/uea/danilo
+[SSH]
+    [Conectar o terminal via SSH]
+    ssh uea@rk322x-box.local
 
-[Executando comandos via SSH no Windows PowerShell]
-ssh uea@rk322x-box.local "ls /home/uea/danilo"
+    [Transferir arquivos pelo terminal no Windows PowerShell via SSH]
+    scp D:\Documentos\GitHub\tv-box_baniwa\serial_tvbox_python\tvbox.py uea@rk322x-box.local:/home/uea/danilo
 
-[Executando scripts em python via SSH no Windows PowerShell]
-ssh uea@rk322x-box.local "python3 -u /home/uea/danilo/tvbox.py"
+    [Executando comandos via SSH no Windows PowerShell via SSH]
+    ssh uea@rk322x-box.local "ls /home/uea/danilo"
 
-[Desligando a máquina]
-ssh -t uea@rk322x-box.local "sudo shutdown -h now"
+    [Executando scripts em python via SSH no Windows PowerShell via SSH]
+    ssh uea@rk322x-box.local "python3 -u /home/uea/danilo/tvbox.py"
+
+    [Desligando a máquina via SSH]
+    ssh -t uea@rk322x-box.local "sudo shutdown -h now"
+
+[Inicialização do script tvbox.py]
+    Recarregar as configurações do sistema:
+    sudo systemctl daemon-reload
+
+    Habilitar para iniciar no boot:
+    sudo systemctl enable tvbox.service
+
+    Iniciar o script agora (sem precisar reiniciar):
+    sudo systemctl start tvbox.service
+
+    [Comandos úteis de gerenciamento]
+        Verificar se está rodando: 
+        sudo systemctl status tvbox.service
+
+        Ver os logs (saída do print): 
+        journalctl -u tvbox.service -f
+
+        Parar o script: 
+        sudo systemctl stop tvbox.service
+    
+        [Como aplicar a mudança]
+            sudo systemctl daemon-reload
+            sudo systemctl restart tvbox.service
