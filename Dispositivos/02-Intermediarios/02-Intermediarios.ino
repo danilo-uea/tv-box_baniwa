@@ -5,8 +5,9 @@
   Função na rede:
   - Recebe dados do transmissor ou de outro intermediário.
   - Consulta/registra o pacote na TV-Box para descartar duplicados.
-  - Se o pacote for novo, envia ACK ao nó anterior e salva como pendente na TV-Box.
-  - A TV-Box envia os pendentes de volta pela Serial; o intermediário retransmite via LoRa.
+  - Se o pacote for novo, salva como pendente na TV-Box e só então envia ACK ao nó anterior.
+  - O intermediário NÃO encaminha dados novos diretamente via LoRa.
+  - A TV-Box envia os pendentes de volta pela Serial em ordem de fila; o intermediário retransmite via LoRa.
   - Quando recebe ACK do próximo nó, remove o pacote pendente da TV-Box.
 
   Observação importante:
@@ -69,7 +70,7 @@
 
 /* Configurações do protocolo */
 #define VERSAO_PROTOCOLO  1
-#define MAX_SALTOS        5
+#define MAX_SALTOS        200
 #define TAM_PACOTE        sizeof(TPacoteRede)
 
 /* Tempos principais */
@@ -106,6 +107,17 @@ uint32_t fatorE = 7;
 
 TPacoteRede pacoteEmEspera;
 bool aguardandoAck = false;
+
+/*
+  Indica se há pacotes pendentes na TV-Box.
+
+  No intermediário, essa flag é usada para documentar e reforçar a prioridade
+  da fila: novos dados recebidos por LoRa nunca são retransmitidos diretamente.
+  Eles são primeiro salvos na TV-Box e somente pacotes entregues pela TV-Box
+  com CMD_NENHUM podem sair novamente pelo rádio LoRa.
+*/
+bool filaTvBoxAtiva = false;
+
 unsigned long momentoEnvio = 0;
 
 /* -------------------- Funções utilitárias -------------------- */
@@ -113,6 +125,30 @@ unsigned long momentoEnvio = 0;
 bool mesmaChavePacote(TPacoteRede a, TPacoteRede b)
 {
   return (a.origem_id == b.origem_id && a.sequencia == b.sequencia);
+}
+
+/*
+  A TV-Box envia STATUS_VAZIO quando não existem pendentes.
+  Isso mantém o intermediário ciente do estado da fila, igual ao transmissor.
+*/
+bool ehAvisoFilaVazia(TPacoteRede pacote)
+{
+  return (pacote.comando_serial == CMD_RESPOSTA_TVBOX &&
+          pacote.tipo_mensagem == MSG_RESPOSTA_TVBOX &&
+          pacote.status == STATUS_VAZIO &&
+          pacote.sequencia == 0);
+}
+
+void atualizarEstadoFilaTvBox(TPacoteRede pacote)
+{
+  if (pacote.comando_serial == CMD_NENHUM && pacote.tipo_mensagem == MSG_DADO)
+  {
+    filaTvBoxAtiva = true;
+  }
+  else if (ehAvisoFilaVazia(pacote))
+  {
+    filaTvBoxAtiva = false;
+  }
 }
 
 void mostrarDisplay(String linha1, String linha2, TPacoteRede pacote)
@@ -241,8 +277,18 @@ uint8_t enviarComandoTvBox(uint8_t comando, TPacoteRede pacote)
     {
       if (resposta.comando_serial == CMD_RESPOSTA_TVBOX && mesmaChavePacote(resposta, pacote))
       {
+        atualizarEstadoFilaTvBox(resposta);
         return resposta.status;
       }
+
+      atualizarEstadoFilaTvBox(resposta);
+
+      /*
+        Se um pacote pendente da TV-Box chegar enquanto estamos aguardando
+        a resposta de outro comando, não transmitimos esse pacote aqui.
+        A TV-Box reenviará o primeiro pendente no próximo ciclo, preservando
+        a prioridade da fila e evitando envio fora de ordem.
+      */
     }
   }
 
@@ -269,7 +315,7 @@ bool registrarRecebidoNaTvBox(TPacoteRede pacote)
   return false;
 }
 
-void armazenarPendenteNaTvBox(TPacoteRede pacote)
+bool armazenarPendenteNaTvBox(TPacoteRede pacote)
 {
   pacote.tipo_dispositivo = TIPO_DISPOSITIVO;
   pacote.remetente_id = ID_DISPOSITIVO;
@@ -282,12 +328,13 @@ void armazenarPendenteNaTvBox(TPacoteRede pacote)
 
   if (status == STATUS_OK || status == STATUS_DUPLICADO)
   {
+    filaTvBoxAtiva = true;
     mostrarDisplay("Na fila", "Aguardando reenvio", pacote);
+    return true;
   }
-  else
-  {
-    mostrarDisplay("Falha TV-Box", "Nao enfileirou", pacote);
-  }
+
+  mostrarDisplay("Falha TV-Box", "Nao enfileirou", pacote);
+  return false;
 }
 
 void removerPendenteDaTvBox(TPacoteRede pacote)
@@ -328,6 +375,7 @@ bool iniciarEnvioComAck(TPacoteRede pacote)
   pacote.status = STATUS_OK;
 
   pacoteEmEspera = pacote;
+  filaTvBoxAtiva = true;
   aguardandoAck = true;
   momentoEnvio = millis();
 
@@ -348,9 +396,15 @@ void processarSerialTvBox()
     return;
   }
 
+  atualizarEstadoFilaTvBox(pacote);
+
   /*
     A TV-Box envia pacotes pendentes com CMD_NENHUM.
-    O intermediário só transmite um pendente por vez.
+
+    Regra de prioridade do intermediário:
+    - só sai pelo LoRa aquilo que veio da fila da TV-Box;
+    - dados novos recebidos pelo rádio são apenas registrados/enfileirados;
+    - se já estiver aguardando ACK, não inicia outro envio.
   */
   if (pacote.comando_serial == CMD_NENHUM && pacote.tipo_mensagem == MSG_DADO)
   {
@@ -383,12 +437,18 @@ void processarDadoRecebido(TPacoteRede recebido)
     return;
   }
 
-  enviarAck(recebido);
-
   /*
     Prepara o pacote para seguir adiante na rede.
     A TV-Box manterá esse pacote como pendente até algum receptor/intermediário
     confirmar o recebimento do próximo salto.
+
+    Mesmo que a fila esteja vazia, este intermediário não retransmite o dado
+    recebido diretamente. O dado sempre entra primeiro em pacotes_pendentes.
+    Assim, a saída LoRa do intermediário respeita a ordem da fila da TV-Box.
+
+    Importante: primeiro salvamos como pendente e somente depois enviamos ACK
+    ao nó anterior. Assim, o transmissor/intermediário anterior só descarta
+    definitivamente o pacote depois que este intermediário garantiu a gravação.
   */
   TPacoteRede encaminhar = recebido;
   encaminhar.saltos++;
@@ -399,7 +459,10 @@ void processarDadoRecebido(TPacoteRede recebido)
   encaminhar.comando_serial = CMD_NENHUM;
   encaminhar.status = STATUS_OK;
 
-  armazenarPendenteNaTvBox(encaminhar);
+  if (armazenarPendenteNaTvBox(encaminhar))
+  {
+    enviarAck(recebido);
+  }
 }
 
 void processarAckRecebido(TPacoteRede ack)

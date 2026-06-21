@@ -72,11 +72,11 @@
 
 /* Configurações do protocolo */
 #define VERSAO_PROTOCOLO  1
-#define MAX_SALTOS        5
+#define MAX_SALTOS        200
 #define TAM_PACOTE        sizeof(TPacoteRede)
 
 /* Tempos principais */
-const unsigned long INTERVALO_GERACAO_MS = 5000;  /* Gera mock de sensores a cada 5 segundos */
+const unsigned long INTERVALO_GERACAO_MS = 8000; /* Gera mock a cada 8 segundos: mais lento que o reenvio da fila */
 const unsigned long TIMEOUT_ACK_MS       = 1800;  /* Tempo para considerar falha na transmissão LoRa */
 const unsigned long TIMEOUT_TVBOX_MS     = 700;   /* Tempo máximo aguardando resposta serial da TV-Box */
 
@@ -123,6 +123,14 @@ uint32_t proximaSequencia = 1;
 TPacoteRede pacoteEmEspera;
 bool aguardandoAck = false;
 bool pacoteVeioDaTvBox = false;
+
+/*
+  Indica se há pacotes pendentes na TV-Box.
+  Enquanto essa flag estiver ativa, o transmissor NÃO envia dados novos diretamente via LoRa.
+  Os dados novos são apenas salvos na TV-Box para preservar a ordem da fila.
+*/
+bool filaTvBoxAtiva = false;
+
 unsigned long momentoEnvio = 0;
 unsigned long momentoUltimaGeracao = 0;
 
@@ -131,6 +139,30 @@ unsigned long momentoUltimaGeracao = 0;
 bool mesmaChavePacote(TPacoteRede a, TPacoteRede b)
 {
   return (a.origem_id == b.origem_id && a.sequencia == b.sequencia);
+}
+
+/*
+  A TV-Box envia um pacote de controle com STATUS_VAZIO quando a fila está vazia.
+  Esse aviso é usado para liberar a transmissão direta de dados novos.
+*/
+bool ehAvisoFilaVazia(TPacoteRede pacote)
+{
+  return (pacote.comando_serial == CMD_RESPOSTA_TVBOX &&
+          pacote.tipo_mensagem == MSG_RESPOSTA_TVBOX &&
+          pacote.status == STATUS_VAZIO &&
+          pacote.sequencia == 0);
+}
+
+void atualizarEstadoFilaTvBox(TPacoteRede pacote)
+{
+  if (pacote.comando_serial == CMD_NENHUM && pacote.tipo_mensagem == MSG_DADO)
+  {
+    filaTvBoxAtiva = true;
+  }
+  else if (ehAvisoFilaVazia(pacote))
+  {
+    filaTvBoxAtiva = false;
+  }
 }
 
 void salvarProximaSequencia()
@@ -277,10 +309,12 @@ uint8_t enviarComandoTvBox(uint8_t comando, TPacoteRede pacote)
         return resposta.status;
       }
 
+      atualizarEstadoFilaTvBox(resposta);
+
       /*
-        Caso chegue um pacote pendente da TV-Box durante a espera,
-        ele será enviado novamente em outro ciclo, pois permanece salvo no banco
-        até que um ACK LoRa positivo gere CMD_REMOVER_PENDENTE.
+        Caso chegue um pacote pendente ou um aviso de fila vazia durante a espera,
+        apenas atualizamos o estado local. O pendente permanece salvo no banco
+        e será enviado novamente pela TV-Box em outro ciclo.
       */
     }
   }
@@ -300,6 +334,7 @@ void armazenarPendenteNaTvBox(TPacoteRede pacote)
 
   if (status == STATUS_OK || status == STATUS_DUPLICADO)
   {
+    filaTvBoxAtiva = true;
     mostrarDisplay("Salvo na TV-Box", "Pendente", pacote);
   }
   else
@@ -335,6 +370,10 @@ bool iniciarEnvioComAck(TPacoteRede pacote, bool veioDaTvBox)
 
   pacoteEmEspera = pacote;
   pacoteVeioDaTvBox = veioDaTvBox;
+  if (veioDaTvBox)
+  {
+    filaTvBoxAtiva = true;
+  }
   aguardandoAck = true;
   momentoEnvio = millis();
 
@@ -393,6 +432,8 @@ void processarSerialTvBox()
   {
     return;
   }
+
+  atualizarEstadoFilaTvBox(pacote);
 
   /*
     A TV-Box envia pacotes pendentes com CMD_NENHUM.
@@ -473,10 +514,13 @@ void gerarEnviarOuArmazenar()
   TPacoteRede novo = gerarMockSensores();
 
   /*
-    Se já existe uma transmissão em andamento, o novo dado é salvo diretamente
-    para não sobrescrever o pacote que ainda aguarda confirmação.
+    Prioridade da fila:
+    - Se a TV-Box tem pendentes, os dados novos NÃO são enviados diretamente.
+    - Eles são salvos na TV-Box, no final da fila.
+    - A TV-Box continuará entregando o primeiro pendente para transmissão,
+      preservando o comportamento de fila FIFO.
   */
-  if (aguardandoAck)
+  if (aguardandoAck || filaTvBoxAtiva)
   {
     armazenarPendenteNaTvBox(novo);
     return;

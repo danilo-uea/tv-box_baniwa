@@ -51,14 +51,20 @@ DB_PATH = os.environ.get("DB_PATH", f"banco_de_dados_lora_{DEVICE_ID}.db")
 
 # Quantidade máxima de pacotes que podem ficar aguardando retransmissão.
 # Usado em transmissores e intermediários.
-TAMANHO_MAXIMO_FILA = int(os.environ.get("TAMANHO_MAXIMO_FILA", "20"))
+TAMANHO_MAXIMO_FILA = int(os.environ.get("TAMANHO_MAXIMO_FILA", "20000"))
 
 # Quantidade máxima de registros mantidos na tabela pacotes_recebidos.
 # Essa tabela é usada para controle de duplicidade em intermediários/receptores.
 # Valor recomendado maior que a fila de pendentes, pois ela funciona como histórico recente.
-TAMANHO_MAXIMO_RECEBIDOS = int(os.environ.get("TAMANHO_MAXIMO_RECEBIDOS", "25"))
+TAMANHO_MAXIMO_RECEBIDOS = TAMANHO_MAXIMO_FILA + 5
 
+# Intervalo em que a TV-Box entrega o primeiro pacote pendente ao ESP32.
+# Deve ser menor que o intervalo de geração de dados do transmissor para esvaziar a fila.
 INTERVALO_ENVIO_PENDENTE = float(os.environ.get("INTERVALO_ENVIO_PENDENTE", "2.0"))
+
+# Quando ativo, a TV-Box avisa ao ESP32 que a fila está vazia.
+# Isso permite que o transmissor saiba quando pode voltar a transmitir dados novos diretamente.
+ENVIAR_AVISO_FILA_VAZIA = os.environ.get("ENVIAR_AVISO_FILA_VAZIA", "1") != "0"
 
 # -------------------- Constantes do protocolo --------------------
 
@@ -431,6 +437,37 @@ def enviar_resposta_tvbox(pacote, status):
     enviar_pacote_serial(resposta)
 
 
+def montar_aviso_fila_vazia():
+    """
+    Cria um pacote de controle para informar ao ESP32 que não há pendentes.
+
+    Esse pacote não representa um dado de sensor. Ele serve apenas para controle
+    de fluxo entre TV-Box e ESP32. O transmissor usa esse aviso para liberar
+    a transmissão direta de novos dados somente quando a fila da TV-Box estiver vazia.
+    """
+    return {
+        "versao": VERSAO_PROTOCOLO,
+        "tipo_dispositivo": DEVICE_TYPE,
+        "tipo_mensagem": MSG_RESPOSTA_TVBOX,
+        "comando_serial": CMD_RESPOSTA_TVBOX,
+        "origem_id": DEVICE_ID,
+        "remetente_id": DEVICE_ID,
+        "destino_id": 0,
+        "sequencia": 0,
+        "saltos": 0,
+        "status": STATUS_VAZIO,
+        "temperatura": 0.0,
+        "umidade": 0.0,
+        "latitude": 0.0,
+        "longitude": 0.0,
+        "timestamp": int(time.time()),
+    }
+
+
+def enviar_aviso_fila_vazia():
+    enviar_pacote_serial(montar_aviso_fila_vazia())
+
+
 # -------------------- Processamento --------------------
 
 def processar_pacote_serial(pacote):
@@ -482,6 +519,8 @@ def main():
     print(f"DEVICE_ID={DEVICE_ID} DEVICE_TYPE={DEVICE_TYPE} DB_PATH={DB_PATH}")
     print(f"TAMANHO_MAXIMO_FILA={TAMANHO_MAXIMO_FILA}")
     print(f"TAMANHO_MAXIMO_RECEBIDOS={TAMANHO_MAXIMO_RECEBIDOS}")
+    print(f"INTERVALO_ENVIO_PENDENTE={INTERVALO_ENVIO_PENDENTE}")
+    print(f"ENVIAR_AVISO_FILA_VAZIA={ENVIAR_AVISO_FILA_VAZIA}")
     print(f"Formato={FORMATO_PACOTE} Tamanho={TAMANHO_PACOTE} bytes")
 
     ultimo_envio_pendente = time.time()
@@ -504,6 +543,8 @@ def main():
                 if pendente is not None:
                     enviar_pacote_serial(pendente)
                     print(f"ENVIAR_PENDENTE origem={pendente['origem_id']} seq={pendente['sequencia']}")
+                elif ENVIAR_AVISO_FILA_VAZIA:
+                    enviar_aviso_fila_vazia()
 
                 ultimo_envio_pendente = agora
 
