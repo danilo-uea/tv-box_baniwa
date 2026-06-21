@@ -7,7 +7,7 @@ StandardError=append:/var/log/tvbox.log
 Environment="TERM=xterm"
 Environment="PYTHONPATH=/home/uea/.local/lib/python3.8/site-packages:/usr/local/lib/python3.8/dist-packages:/usr/lib/python3/dist-packages:/usr/lib/python3.8/dist-packages"
 WorkingDirectory=/home/uea/danilo
-ExecStart=/usr/bin/python3 /home/uea/danilo/tvbox.py
+ExecStart=/usr/bin/python3 -u /home/uea/danilo/tvbox.py
 Restart=always
 User=root
 

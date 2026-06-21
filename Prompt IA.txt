@@ -1,0 +1,69 @@
+- Preciso desenvolver uma rede de sensores usando tecnologia LoRa
+    - A rede deverá ser composta por três dispositivos diferentes: transmissor, intermediários e receptores
+    - Sequências de trafego dos dados: 
+        - transmissor -> intermediários -> receptores
+        - transmissor -> receptores
+    - Os dados gerados podem estar armazenados na Tv-Box caso o dado não consiga ser transmitido com sucesso.
+    - Cada transmissão feita deverá receber uma mensagem de confirmação de recepção e, caso confirmado positivamente, descartar o dado definitivamente do dispositivo transmissor.
+    - Caso a confirmação seja negativa, armazenar os dados na Tv-Box.
+    - Cada recepção de dados deverá enviar uma mensagem de confirmação de recebimento.
+- Dispositivos
+    1) Transmissor
+        - É único responsável pela geração dos dados através dos sensores.
+        - Irá transmitir os dados dos sensores via LoRa caso tenha alguma conexão com intermediários ou receptor.
+        - Caso não tenha conexão, irá armazenar no banco de dados da TV-Box.
+        - Pode ter um ou mais na rede.
+        - Não recebe dados, apenas transmite.
+        - Deverá ter um identificador único para diferenciar os dispositivos.
+        - Deverá ter uma variável para saber o tipo de dispositivo que no caso é transmissor.
+        - Cada dado gerado deverá conter o identificador único do transmissor para rastreamento da origem desse dado e estatísticas.
+        - Hardwares:
+            - Sensores: Temperatura e Umidade, GPS (latitude e longitude).
+            - Esp32 LoRa v2.
+            - Tv-Box (armazenamento de dados caso necessário).
+        - Observação: Os sensores de Temperatura e Umidade, e o GPS ainda não foram implementados. Criar dados fictícos (mock).
+    2) Intermediário
+        - Tem a função de estender o alcançe da comunicação LoRa para o receptor.
+        - Recebe dados do transmissor ou de outros intermediários.
+        - Transmite dados para receptor ou outros intermediários.
+        - Pode ter um ou mais na rede.
+        - Deverá ter um identificador único para diferenciar os dispositivos.
+        - Deverá ter uma variável para saber o tipo de dispositivo que no caso é o Intermediário.
+        - Deverá descartar a recepção de dados repetidos que, no momento, já estão armazenados na Tv-Box e, nesse caso, não enviar a mensagem de confirmação de recepção.
+        - Hardwares:
+            - Esp32 LoRa v2.
+            - Tv-Box (armazenamento de dados caso necessário).
+    3) Receptor
+        - Tem a função de finalizar o fluxo de dados, armazenando-os na Tv-Box.
+        - Pode ter um ou mais.
+        - Apenas recebe os dados.
+        - Deverá ter um identificador único para diferenciar os dispositivos.
+        - Deverá ter uma variável para saber o tipo de dispositivo que no caso é o receptor.
+        - Cada dado armazenado na TV-Box deverá conter o identificador único do receptor para rastreamento e estudos estatísticos.
+        - Deverá descartar a recepção de dados repetidos que, no momento, já estão armazenados na Tv-Box e, nesse caso, não enviar a mensagem de confirmação de recepção.
+        - Hardwares:
+            - Esp32 LoRa v2.
+            - Tv-Box (armazenamento de dados, sempre é necessário).
+
+O que eu já foi feito?
+    - Transmissor
+        - O transmissor envia uma mensagem "Ola mundo" para o dispositivo intermediário.
+        - Se receber uma confirmação de recebimento, descarta o dado enviado.
+        - Caso contrário, armazena na Tv-Box.
+        - Arquivos em anexo
+            - O código do transmissor em arduino "01-Transmissor.ino" do "Esp32 LoRa v2".
+            - O código em Python do dispositivo transmissor "tvbox.py" que fica na Tv-Box e é responsável pelo armazenamento dos dados.
+    - Intermediário
+        - No momento, apenas recebe a mensagem e envia uma confirmação de recebimento.
+        - Ainda falta implementar a lógica de envio dos dados e armazenamento na Tv-Box (caso necessário).
+        - Arquivos em anexo
+            - O código arduino do dispositivo intermediário "02-Intermediarios.ino" (em anexo).
+
+O que eu espero que seja feito?
+    - Baseado nos arquivos em anexo, faça ou refaça toda a lógica dos códigos dos três dispositivos desta rede de modo que a mesma funcione de maneira harmônica.
+    - Os sensores serão implementados em um outro momento. Portanto, criar dados fictícios (mock) dos sensores no lugar da mensagem "Ola mundo".
+    - Os dispositivos receptores e os intermediários devem descartar dados repetidos que já estão armazenados na Tv-Box.
+    - O pacote que irá trafegar na rede deverá conter os dados dos sensores e os dados necessários para o funcionamento do protocolo da rede. 
+    - O protocolo da rede deverá ser elaborado pela própria I.A.
+    - Aquilo que já foi desenvolvido está funcionando sem erros. Portanto, desenvolver baseando-se no que já foi feito e não utilizar outras bibliotecas.
+    - Faça comentários nos códigos para documentar e facilitar o entendimento.

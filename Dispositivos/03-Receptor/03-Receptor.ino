@@ -1,17 +1,13 @@
 /*
-  02-Intermediario.ino
+  03-Receptor.ino
   Dispositivo: ESP32 LoRa v2 + TV-Box via Serial
 
   Função na rede:
-  - Recebe dados do transmissor ou de outro intermediário.
-  - Consulta/registra o pacote na TV-Box para descartar duplicados.
-  - Se o pacote for novo, envia ACK ao nó anterior e salva como pendente na TV-Box.
-  - A TV-Box envia os pendentes de volta pela Serial; o intermediário retransmite via LoRa.
-  - Quando recebe ACK do próximo nó, remove o pacote pendente da TV-Box.
-
-  Observação importante:
-  - Duplicados já existentes na TV-Box são descartados e NÃO recebem ACK,
-    conforme solicitado na regra do projeto.
+  - Finaliza o fluxo.
+  - Recebe dados do transmissor ou de intermediários.
+  - Registra os dados na TV-Box do receptor.
+  - Se o dado for novo, envia ACK ao nó anterior.
+  - Se o dado já existir na TV-Box, descarta e NÃO envia ACK, conforme solicitado.
 */
 
 /* Bibliotecas para o Display OLED */
@@ -40,8 +36,8 @@
 #define BAND               915E6
 
 /* Configuração deste nó */
-#define ID_DISPOSITIVO     2
-#define TIPO_DISPOSITIVO   TIPO_INTERMEDIARIO
+#define ID_DISPOSITIVO     3
+#define TIPO_DISPOSITIVO   TIPO_RECEPTOR
 
 /* Tipos de dispositivo */
 #define TIPO_TRANSMISSOR   1
@@ -69,11 +65,8 @@
 
 /* Configurações do protocolo */
 #define VERSAO_PROTOCOLO  1
-#define MAX_SALTOS        5
 #define TAM_PACOTE        sizeof(TPacoteRede)
 
-/* Tempos principais */
-const unsigned long TIMEOUT_ACK_MS   = 1800;
 const unsigned long TIMEOUT_TVBOX_MS = 700;
 
 /*
@@ -104,10 +97,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 
 uint32_t fatorE = 7;
 
-TPacoteRede pacoteEmEspera;
-bool aguardandoAck = false;
-unsigned long momentoEnvio = 0;
-
 /* -------------------- Funções utilitárias -------------------- */
 
 bool mesmaChavePacote(TPacoteRede a, TPacoteRede b)
@@ -119,7 +108,7 @@ void mostrarDisplay(String linha1, String linha2, TPacoteRede pacote)
 {
   display.clearDisplay();
   display.setCursor(0, 0);
-  display.println("INTERMEDIARIO");
+  display.println("RECEPTOR");
 
   display.setCursor(0, 10);
   display.println(linha1);
@@ -134,16 +123,16 @@ void mostrarDisplay(String linha1, String linha2, TPacoteRede pacote)
   display.println(pacote.sequencia);
 
   display.setCursor(0, 40);
-  display.print("Saltos: ");
-  display.print(pacote.saltos);
-  display.print(" Rem: ");
-  display.print(pacote.remetente_id);
-
-  display.setCursor(0, 50);
   display.print("T:");
   display.print(pacote.temperatura, 1);
   display.print(" U:");
   display.print(pacote.umidade, 1);
+
+  display.setCursor(0, 50);
+  display.print("Rem: ");
+  display.print(pacote.remetente_id);
+  display.print(" S:");
+  display.print(pacote.saltos);
 
   display.display();
 }
@@ -223,9 +212,6 @@ bool lerPacoteLoRa(TPacoteRede *pacote)
   return false;
 }
 
-/*
-  Envia comando para a TV-Box e aguarda resposta.
-*/
 uint8_t enviarComandoTvBox(uint8_t comando, TPacoteRede pacote)
 {
   pacote.comando_serial = comando;
@@ -255,7 +241,7 @@ bool registrarRecebidoNaTvBox(TPacoteRede pacote)
 
   if (status == STATUS_OK)
   {
-    mostrarDisplay("Recebido novo", "Registrado TV-Box", pacote);
+    mostrarDisplay("Recebido novo", "Salvo TV-Box", pacote);
     return true;
   }
 
@@ -269,33 +255,6 @@ bool registrarRecebidoNaTvBox(TPacoteRede pacote)
   return false;
 }
 
-void armazenarPendenteNaTvBox(TPacoteRede pacote)
-{
-  pacote.tipo_dispositivo = TIPO_DISPOSITIVO;
-  pacote.remetente_id = ID_DISPOSITIVO;
-  pacote.destino_id = 0;
-  pacote.tipo_mensagem = MSG_DADO;
-  pacote.comando_serial = CMD_ARMAZENAR_PENDENTE;
-  pacote.status = STATUS_OK;
-
-  uint8_t status = enviarComandoTvBox(CMD_ARMAZENAR_PENDENTE, pacote);
-
-  if (status == STATUS_OK || status == STATUS_DUPLICADO)
-  {
-    mostrarDisplay("Na fila", "Aguardando reenvio", pacote);
-  }
-  else
-  {
-    mostrarDisplay("Falha TV-Box", "Nao enfileirou", pacote);
-  }
-}
-
-void removerPendenteDaTvBox(TPacoteRede pacote)
-{
-  pacote.comando_serial = CMD_REMOVER_PENDENTE;
-  enviarComandoTvBox(CMD_REMOVER_PENDENTE, pacote);
-}
-
 void enviarAck(TPacoteRede recebido)
 {
   TPacoteRede ack = recebido;
@@ -304,125 +263,30 @@ void enviarAck(TPacoteRede recebido)
   ack.tipo_dispositivo = TIPO_DISPOSITIVO;
   ack.tipo_mensagem = MSG_ACK;
   ack.comando_serial = CMD_NENHUM;
-  ack.destino_id = recebido.remetente_id;  /* ACK volta para quem transmitiu o último salto */
+  ack.destino_id = recebido.remetente_id;
   ack.remetente_id = ID_DISPOSITIVO;
   ack.status = STATUS_OK;
 
   enviarPacoteLoRa(ack);
-  mostrarDisplay("ACK enviado", "Para no anterior", recebido);
-}
-
-bool iniciarEnvioComAck(TPacoteRede pacote)
-{
-  if (aguardandoAck)
-  {
-    return false;
-  }
-
-  pacote.versao = VERSAO_PROTOCOLO;
-  pacote.tipo_dispositivo = TIPO_DISPOSITIVO;
-  pacote.tipo_mensagem = MSG_DADO;
-  pacote.comando_serial = CMD_NENHUM;
-  pacote.remetente_id = ID_DISPOSITIVO;
-  pacote.destino_id = 0;
-  pacote.status = STATUS_OK;
-
-  pacoteEmEspera = pacote;
-  aguardandoAck = true;
-  momentoEnvio = millis();
-
-  enviarPacoteLoRa(pacoteEmEspera);
-  mostrarDisplay("Retransmitindo", "Aguardando ACK", pacoteEmEspera);
-
-  return true;
-}
-
-/* -------------------- Processamento principal -------------------- */
-
-void processarSerialTvBox()
-{
-  TPacoteRede pacote;
-
-  if (!lerPacoteSerial(&pacote))
-  {
-    return;
-  }
-
-  /*
-    A TV-Box envia pacotes pendentes com CMD_NENHUM.
-    O intermediário só transmite um pendente por vez.
-  */
-  if (pacote.comando_serial == CMD_NENHUM && pacote.tipo_mensagem == MSG_DADO)
-  {
-    iniciarEnvioComAck(pacote);
-  }
+  mostrarDisplay("ACK enviado", "Fluxo finalizado", recebido);
 }
 
 void processarDadoRecebido(TPacoteRede recebido)
 {
-  /*
-    Evita tratar eco do próprio pacote transmitido pelo rádio.
-  */
   if (recebido.remetente_id == ID_DISPOSITIVO)
   {
     return;
   }
 
-  if (recebido.saltos >= MAX_SALTOS)
-  {
-    mostrarDisplay("Max saltos", "Descartado", recebido);
-    return;
-  }
-
   /*
-    Primeiro registra na TV-Box.
-    Somente pacotes novos recebem ACK e entram na fila de retransmissão.
+    O receptor finaliza o fluxo:
+    - se for novo na TV-Box, salva e confirma;
+    - se for repetido, descarta sem confirmar.
   */
-  if (!registrarRecebidoNaTvBox(recebido))
+  if (registrarRecebidoNaTvBox(recebido))
   {
-    return;
+    enviarAck(recebido);
   }
-
-  enviarAck(recebido);
-
-  /*
-    Prepara o pacote para seguir adiante na rede.
-    A TV-Box manterá esse pacote como pendente até algum receptor/intermediário
-    confirmar o recebimento do próximo salto.
-  */
-  TPacoteRede encaminhar = recebido;
-  encaminhar.saltos++;
-  encaminhar.tipo_dispositivo = TIPO_DISPOSITIVO;
-  encaminhar.remetente_id = ID_DISPOSITIVO;
-  encaminhar.destino_id = 0;
-  encaminhar.tipo_mensagem = MSG_DADO;
-  encaminhar.comando_serial = CMD_NENHUM;
-  encaminhar.status = STATUS_OK;
-
-  armazenarPendenteNaTvBox(encaminhar);
-}
-
-void processarAckRecebido(TPacoteRede ack)
-{
-  if (ack.destino_id != ID_DISPOSITIVO)
-  {
-    return;
-  }
-
-  if (!aguardandoAck)
-  {
-    return;
-  }
-
-  if (!mesmaChavePacote(ack, pacoteEmEspera))
-  {
-    return;
-  }
-
-  removerPendenteDaTvBox(pacoteEmEspera);
-  aguardandoAck = false;
-
-  mostrarDisplay("ACK recebido", "Removido fila", ack);
 }
 
 void processarLoRa()
@@ -442,28 +306,6 @@ void processarLoRa()
   if (recebido.tipo_mensagem == MSG_DADO)
   {
     processarDadoRecebido(recebido);
-  }
-  else if (recebido.tipo_mensagem == MSG_ACK)
-  {
-    processarAckRecebido(recebido);
-  }
-}
-
-void processarTimeoutAck()
-{
-  if (!aguardandoAck)
-  {
-    return;
-  }
-
-  /*
-    Como o pacote transmitido pelo intermediário já está salvo na TV-Box,
-    no timeout basta liberar o estado. A TV-Box reenviará o mesmo pacote depois.
-  */
-  if (millis() - momentoEnvio >= TIMEOUT_ACK_MS)
-  {
-    mostrarDisplay("Sem ACK", "Mantido TV-Box", pacoteEmEspera);
-    aguardandoAck = false;
   }
 }
 
@@ -494,7 +336,5 @@ void setup()
 
 void loop()
 {
-  processarSerialTvBox();
   processarLoRa();
-  processarTimeoutAck();
 }
