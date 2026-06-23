@@ -11,8 +11,8 @@
   - Quando recebe ACK do próximo nó, remove o pacote pendente da TV-Box.
 
   Observação importante:
-  - Duplicados já existentes na TV-Box são descartados e NÃO recebem ACK,
-    conforme solicitado na regra do projeto.
+  - Duplicados já existentes na TV-Box são ignorados localmente, mas recebem ACK.
+    Isso permite que o nó anterior descarte o pacote que ele ainda mantinha pendente.
 */
 
 /* Bibliotecas para o Display OLED */
@@ -295,24 +295,30 @@ uint8_t enviarComandoTvBox(uint8_t comando, TPacoteRede pacote)
   return STATUS_ERRO;
 }
 
-bool registrarRecebidoNaTvBox(TPacoteRede pacote)
+uint8_t registrarRecebidoNaTvBox(TPacoteRede pacote)
 {
   uint8_t status = enviarComandoTvBox(CMD_REGISTRAR_RECEBIDO, pacote);
 
   if (status == STATUS_OK)
   {
     mostrarDisplay("Recebido novo", "Registrado TV-Box", pacote);
-    return true;
+    return STATUS_OK;
   }
 
   if (status == STATUS_DUPLICADO)
   {
-    mostrarDisplay("Duplicado", "Sem ACK", pacote);
-    return false;
+    /*
+      O pacote já está na TV-Box local.
+      Ele não deve ser salvo novamente nem reenfileirado, mas deve ser
+      confirmado com ACK para que o nó anterior possa remover esse pacote
+      da própria fila de pendentes.
+    */
+    mostrarDisplay("Duplicado", "ACK liberado", pacote);
+    return STATUS_DUPLICADO;
   }
 
   mostrarDisplay("Falha TV-Box", "Sem ACK", pacote);
-  return false;
+  return STATUS_ERRO;
 }
 
 bool armazenarPendenteNaTvBox(TPacoteRede pacote)
@@ -430,9 +436,22 @@ void processarDadoRecebido(TPacoteRede recebido)
 
   /*
     Primeiro registra na TV-Box.
-    Somente pacotes novos recebem ACK e entram na fila de retransmissão.
+
+    Regra atualizada:
+    - STATUS_OK: pacote novo, será salvo como pendente para retransmissão.
+    - STATUS_DUPLICADO: pacote já existia; ignoramos localmente, mas enviamos ACK
+      para o nó anterior descartar o pendente.
+    - STATUS_ERRO: não há garantia de armazenamento; não envia ACK.
   */
-  if (!registrarRecebidoNaTvBox(recebido))
+  uint8_t statusRegistro = registrarRecebidoNaTvBox(recebido);
+
+  if (statusRegistro == STATUS_DUPLICADO)
+  {
+    enviarAck(recebido);
+    return;
+  }
+
+  if (statusRegistro != STATUS_OK)
   {
     return;
   }

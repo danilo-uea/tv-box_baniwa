@@ -36,11 +36,14 @@ def exibir_tabela(conn, nome_tabela):
     
     # Imprime os registros formatados
     for idx, row in enumerate(registros, 1):
-        print(f"--- Registro {idx} ---")
-        for key in row.keys():
-            # Formatação simples para alinhar os valores
-            print(f"  {key:<20}: {row[key]}")
-        print("-" * 40)
+        # Cria uma lista de strings no formato "Chave: Valor"
+        itens = [f"{key.strip()}: {row[key]}" for key in row.keys()]
+        
+        # Junta todos os itens com um separador visual (ex: " | ")
+        linha_registro = " | ".join(itens)
+        
+        print(f"Registro {idx:02d} -> {linha_registro}")
+        print("")
 
 def main():
     # Permite passar o caminho do banco como argumento na linha de comando
@@ -49,7 +52,7 @@ def main():
         db_path = sys.argv[1]
     else:
         # Se não passar argumento, usa o padrão do DEVICE_ID=1 do tvbox.py
-        device_id = os.environ.get("DEVICE_ID", "3")
+        device_id = os.environ.get("DEVICE_ID", "1")
         db_path = os.environ.get("DB_PATH", f"banco_de_dados_lora_{device_id}.db")
         
     print(f"🔌 Conectando ao banco de dados: {db_path}")

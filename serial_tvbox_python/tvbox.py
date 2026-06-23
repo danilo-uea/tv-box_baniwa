@@ -39,8 +39,8 @@ TIPO_INTERMEDIARIO = 2
 TIPO_RECEPTOR = 3
 
 # Pode editar diretamente aqui ou passar por variável de ambiente.
-DEVICE_ID = int(os.environ.get("DEVICE_ID", "2"))
-DEVICE_TYPE = int(os.environ.get("DEVICE_TYPE", str(TIPO_INTERMEDIARIO)))
+DEVICE_ID = int(os.environ.get("DEVICE_ID", "3"))
+DEVICE_TYPE = int(os.environ.get("DEVICE_TYPE", str(TIPO_TRANSMISSOR)))
 
 # Porta Serial: se vazio, tenta usar a primeira porta encontrada.
 SERIAL_PORT = os.environ.get("SERIAL_PORT", "")
@@ -56,7 +56,7 @@ TAMANHO_MAXIMO_FILA = int(os.environ.get("TAMANHO_MAXIMO_FILA", "20000"))
 # Quantidade máxima de registros mantidos na tabela pacotes_recebidos.
 # Essa tabela é usada para controle de duplicidade em intermediários/receptores.
 # Valor recomendado maior que a fila de pendentes, pois ela funciona como histórico recente.
-TAMANHO_MAXIMO_RECEBIDOS = TAMANHO_MAXIMO_FILA + 5
+TAMANHO_MAXIMO_RECEBIDOS = int(os.environ.get("TAMANHO_MAXIMO_RECEBIDOS", "40000"))
 
 # Intervalo em que a TV-Box entrega o primeiro pacote pendente ao ESP32.
 # Deve ser menor que o intervalo de geração de dados do transmissor para esvaziar a fila.

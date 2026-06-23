@@ -6,8 +6,9 @@
   - Finaliza o fluxo.
   - Recebe dados do transmissor ou de intermediários.
   - Registra os dados na TV-Box do receptor.
-  - Se o dado for novo, envia ACK ao nó anterior.
-  - Se o dado já existir na TV-Box, descarta e NÃO envia ACK, conforme solicitado.
+  - Se o dado for novo, salva na TV-Box e envia ACK ao nó anterior.
+  - Se o dado já existir na TV-Box, ignora o conteúdo e também envia ACK.
+    Assim, transmissor ou intermediário removem o pacote pendente.
 */
 
 /* Bibliotecas para o Display OLED */
@@ -235,24 +236,29 @@ uint8_t enviarComandoTvBox(uint8_t comando, TPacoteRede pacote)
   return STATUS_ERRO;
 }
 
-bool registrarRecebidoNaTvBox(TPacoteRede pacote)
+uint8_t registrarRecebidoNaTvBox(TPacoteRede pacote)
 {
   uint8_t status = enviarComandoTvBox(CMD_REGISTRAR_RECEBIDO, pacote);
 
   if (status == STATUS_OK)
   {
     mostrarDisplay("Recebido novo", "Salvo TV-Box", pacote);
-    return true;
+    return STATUS_OK;
   }
 
   if (status == STATUS_DUPLICADO)
   {
-    mostrarDisplay("Duplicado", "Sem ACK", pacote);
-    return false;
+    /*
+      O dado já está armazenado no receptor.
+      Não grava novamente, mas retorna STATUS_DUPLICADO para que o código
+      envie ACK ao nó anterior e libere a fila dele.
+    */
+    mostrarDisplay("Duplicado", "ACK liberado", pacote);
+    return STATUS_DUPLICADO;
   }
 
   mostrarDisplay("Falha TV-Box", "Sem ACK", pacote);
-  return false;
+  return STATUS_ERRO;
 }
 
 void enviarAck(TPacoteRede recebido)
@@ -281,9 +287,15 @@ void processarDadoRecebido(TPacoteRede recebido)
   /*
     O receptor finaliza o fluxo:
     - se for novo na TV-Box, salva e confirma;
-    - se for repetido, descarta sem confirmar.
+    - se for repetido, ignora o dado e também confirma.
+
+    O ACK em duplicados é importante porque informa ao transmissor/intermediário
+    anterior que o receptor já possui aquele pacote, permitindo remover o
+    pendente da fila.
   */
-  if (registrarRecebidoNaTvBox(recebido))
+  uint8_t statusRegistro = registrarRecebidoNaTvBox(recebido);
+
+  if (statusRegistro == STATUS_OK || statusRegistro == STATUS_DUPLICADO)
   {
     enviarAck(recebido);
   }
